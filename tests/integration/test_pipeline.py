@@ -1,0 +1,1 @@
+#Tests full pipeline: log -> token -> model -> output
