@@ -1,2 +1,35 @@
 #This is for reproducing the Atnlyze WAF environment using Docker Compose.
 #Code must run the same on any machine with Docker and Docker Compose installed.
+version: "3.9"
+
+services:
+  nginx:
+    image: nginx:latest
+    container_name: atnlyze-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../data/raw:/var/log/nginx
+    depends_on:
+      - dvwa
+      - juice_shop
+      - webgoat
+
+  dvwa:
+    image: vulnerables/web-dvwa
+    container_name: atnlyze-dvwa
+    expose:
+      - "80"
+
+  juice_shop:
+    image: bkimminich/juice-shop
+    container_name: atnlyze-juice-shop
+    expose:
+      - "3000"
+
+  webgoat:
+    image: webgoat/webgoat
+    container_name: atnlyze-webgoat
+    expose:
+      - "8080"
