@@ -1,39 +1,47 @@
 import os
-from atnlyze.model.baseline import BaselineWAFModel
+import joblib
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report
 
+DATA_DIR = "data/processed"
+MODEL_DIR = "models"
+MODEL_PATH = os.path.join(MODEL_DIR, "baseline.joblib")
+VEC_PATH = os.path.join(MODEL_DIR, "vectorizer.joblib")
 
-class Trainer:
-    def __init__(self, model=None, model_path="models/baseline.joblib"):
-        self.model = model or BaselineWAFModel()
-        self.model_path = model_path
+def load_data(split):
+    df = pd.read_csv(os.path.join(DATA_DIR, f"{split}.csv"))
+    return df["text"].values, df["label"].values
 
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+def main():
+    os.makedirs(MODEL_DIR, exist_ok=True)
 
-    def train(self, dataset):
-        X_train, y_train = dataset.get_train()
-        X_val, y_val = dataset.get_val()
+    X_train, y_train = load_data("train")
+    X_val, y_val = load_data("val")
 
-        self.model.train(X_train, y_train)
+    print("Vectorizing text...")
+    vectorizer = TfidfVectorizer(
+        ngram_range=(1,2),
+        max_features=5000,
+        stop_words=None
+    )
 
-        train_metrics = self.model.evaluate(X_train, y_train)
-        val_metrics = self.model.evaluate(X_val, y_val)
+    X_train_vec = vectorizer.fit_transform(X_train)
+    X_val_vec = vectorizer.transform(X_val)
 
-        self.model.save(self.model_path)
+    print("Training Logistic Regression...")
+    model = LogisticRegression(max_iter=1000, n_jobs=-1)
+    model.fit(X_train_vec, y_train)
 
-        return {
-            "train": train_metrics,
-            "val": val_metrics
-        }
+    print("Validation Performance:")
+    preds = model.predict(X_val_vec)
+    print(classification_report(y_val, preds))
 
-    def load(self):
-        self.model.load(self.model_path)
+    joblib.dump(model, MODEL_PATH)
+    joblib.dump(vectorizer, VEC_PATH)
 
-    def evaluate(self, dataset):
-        X_test, y_test = dataset.get_test()
-        return self.model.evaluate(X_test, y_test)
+    print("Model and vectorizer saved.")
 
-    def predict(self, X, threshold=0.5):
-        return self.model.predict(X, threshold)
-
-    def predict_proba(self, X):
-        return self.model.predict_proba(X)
+if __name__ == "__main__":
+    main()

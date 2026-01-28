@@ -8,3 +8,5 @@ pytest
 flake8
 python-dotenv
 joblib
+requests
+pandas
