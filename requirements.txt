@@ -16,4 +16,5 @@ accelerate
 scipy
 tensorboard
 tensorflow
+httpx
 
