@@ -1,17 +1,17 @@
-from atnlyze.dataset import WAFDataset
-from atnlyze.model.trainer import Trainer
+"""
+scripts/train_baseline.py
 
-dataset = WAFDataset(
-    benign_path="data/samples/benign.log",
-    malicious_path="data/samples/malicious.log",
-    dim=512
-)
+Trains the TF-IDF + Logistic Regression baseline WAF model.
+Reads from data/processed/train.csv and val.csv.
+Saves model to models/baseline.joblib and models/vectorizer.joblib.
+"""
 
-trainer = Trainer(model_path="models/baseline.joblib")
-metrics = trainer.train(dataset)
+import sys
+import os
 
-print("Training complete.")
-print(metrics)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-test_metrics = trainer.evaluate(dataset)
-print("Test metrics:", test_metrics)
+from atnlyze.model.trainer import main
+
+if __name__ == "__main__":
+    main()

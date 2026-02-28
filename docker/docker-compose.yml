@@ -1,6 +1,6 @@
 #This is for reproducing the Atnlyze WAF environment using Docker Compose.
 #Code must run the same on any machine with Docker and Docker Compose installed.
-version: "3.9"
+# version: "3.9"
 
 services:
   nginx:

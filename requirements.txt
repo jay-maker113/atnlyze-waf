@@ -10,3 +10,10 @@ python-dotenv
 joblib
 requests
 pandas
+transformers
+datasets
+accelerate
+scipy
+tensorboard
+tensorflow
+
