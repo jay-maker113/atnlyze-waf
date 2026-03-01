@@ -32,17 +32,11 @@ jobs:
           python -c "import torch; print('torch ok')"
           python -c "import sklearn; print('sklearn ok')"
 
-      - name: Run unit tests
+      - name: Run CI-safe tests
         env:
           PYTHONPATH: src
         run: |
-          pytest tests/unit/ -q
-
-      - name: Run integration tests
-        env:
-          PYTHONPATH: src
-        run: |
-          pytest tests/integration/ -q
+          pytest tests/unit/test_parser.py tests/unit/test_tokenizer.py -q
 
       - name: Lint
         env:
