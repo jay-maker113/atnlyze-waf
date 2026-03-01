@@ -32,12 +32,6 @@ jobs:
           python -c "import torch; print('torch ok')"
           python -c "import sklearn; print('sklearn ok')"
 
-      - name: Train baseline artifacts for tests
-        env:
-          PYTHONPATH: src
-        run: |
-          python scripts/train_baseline.py
-
       - name: Run unit tests
         env:
           PYTHONPATH: src
