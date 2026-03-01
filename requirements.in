@@ -1,0 +1,37 @@
+# AtnLyze WAF — requirements.in
+# Human-maintained. Do NOT pin versions here.
+# To regenerate the lock file:
+#   pip install pip-tools
+#   pip-compile requirements.in -o requirements.txt
+
+# Core API
+fastapi
+uvicorn
+pydantic
+httpx
+python-dotenv
+
+# Data / ML
+numpy
+pandas
+scikit-learn
+scipy
+joblib
+requests
+
+# Transformer stack
+torch
+transformers
+datasets
+accelerate
+tokenizers
+tensorboard
+
+# ONNX
+onnx
+onnxruntime
+onnxscript
+
+# Dev / Test
+pytest
+flake8
