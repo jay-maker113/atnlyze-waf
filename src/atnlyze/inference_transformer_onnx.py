@@ -31,7 +31,7 @@ class ONNXTransformerWAFInferenceEngine:
     def __init__(self, onnx_dir: str = "models/bert_waf_onnx", threshold: float = 0.5):
         import os
         onnx_model_path = os.path.join(onnx_dir, "model.onnx")
-        tokenizer_path  = os.path.join(onnx_dir, "tokenizer")
+        tokenizer_path = os.path.join(onnx_dir, "tokenizer")
 
         self.tokenizer = DistilBertTokenizerFast.from_pretrained(tokenizer_path)
         self.threshold = threshold
@@ -57,20 +57,20 @@ class ONNXTransformerWAFInferenceEngine:
             return_tensors="np",
         )
         ort_inputs = {
-            "input_ids":      inputs["input_ids"].astype(np.int64),
+            "input_ids": inputs["input_ids"].astype(np.int64),
             "attention_mask": inputs["attention_mask"].astype(np.int64),
         }
         logits = self.session.run(["logits"], ort_inputs)[0]
-        exp_l  = np.exp(logits - logits.max(axis=1, keepdims=True))
-        probs  = exp_l / exp_l.sum(axis=1, keepdims=True)
-        prob   = float(probs[0][1])
+        exp_l = np.exp(logits - logits.max(axis=1, keepdims=True))
+        probs = exp_l / exp_l.sum(axis=1, keepdims=True)
+        prob = float(probs[0][1])
 
-        label    = "malicious" if prob >= self.threshold else "benign"
+        label = "malicious" if prob >= self.threshold else "benign"
         decision = "block" if label == "malicious" else "allow"
 
         return {
-            "label":    label,
-            "score":    round(prob, 4),
+            "label": label,
+            "score": round(prob, 4),
             "decision": decision,
-            "model":    "transformer_onnx",
+            "model": "transformer_onnx",
         }

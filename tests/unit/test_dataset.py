@@ -11,14 +11,13 @@ These tests verify the data that actually feeds that pipeline.
 
 import os
 import pandas as pd
-import pytest
 
 
 TRAIN_CSV = "data/processed/train.csv"
-VAL_CSV   = "data/processed/val.csv"
-TEST_CSV  = "data/processed/test.csv"
+VAL_CSV = "data/processed/val.csv"
+TEST_CSV = "data/processed/test.csv"
 TRAIN_BERT_CSV = "data/processed/train_bert.csv"
-TEST_HARD_CSV  = "data/processed/test_hard_bert.csv"
+TEST_HARD_CSV = "data/processed/test_hard_bert.csv"
 
 
 # ── Baseline CSV integrity
@@ -61,8 +60,8 @@ def test_train_val_test_no_overlap():
     Checks text column only — labels are derived from text so checking text is sufficient.
     """
     train = set(pd.read_csv(TRAIN_CSV)["text"])
-    val   = set(pd.read_csv(VAL_CSV)["text"])
-    test  = set(pd.read_csv(TEST_CSV)["text"])
+    val = set(pd.read_csv(VAL_CSV)["text"])
+    test = set(pd.read_csv(TEST_CSV)["text"])
 
     train_val_overlap = train & val
     train_test_overlap = train & test

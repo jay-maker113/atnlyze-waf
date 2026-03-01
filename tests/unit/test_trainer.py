@@ -22,7 +22,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 BASELINE_MODEL = "models/baseline.joblib"
-VECTORIZER     = "models/vectorizer.joblib"
+VECTORIZER = "models/vectorizer.joblib"
 
 # Known malicious inputs — these must score high
 MALICIOUS_SAMPLES = [

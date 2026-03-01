@@ -1,5 +1,5 @@
 import random
-from typing import List, Tuple
+from typing import Tuple
 import numpy as np
 
 from atnlyze.parser import parse_log_line

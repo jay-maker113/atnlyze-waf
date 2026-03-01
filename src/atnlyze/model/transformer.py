@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 import torch
 from datasets import Dataset
@@ -42,10 +41,10 @@ class TransformerWAF:
 
     def train(self, train_path, val_path):
         train_ds = self._load_split(train_path)
-        val_ds   = self._load_split(val_path)
+        val_ds = self._load_split(val_path)
 
         train_ds = train_ds.map(self._tokenize, batched=True)
-        val_ds   = val_ds.map(self._tokenize, batched=True)
+        val_ds = val_ds.map(self._tokenize, batched=True)
 
         train_ds.set_format("torch", columns=["input_ids", "attention_mask", "label"])
         val_ds.set_format("torch", columns=["input_ids", "attention_mask", "label"])
