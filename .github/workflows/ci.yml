@@ -36,7 +36,7 @@ jobs:
         env:
           PYTHONPATH: src
         run: |
-          pytest tests/unit/test_parser.py tests/unit/test_tokenizer.py -q
+          pytest tests/unit/test_parser.py tests/unit/test_tokenizer.py tests/unit/test_dataset_schema.py -q
 
       - name: Lint
         env:
