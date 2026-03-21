@@ -7,7 +7,6 @@ class BaselineWAFModel:
     def __init__(self):
         self.model = LogisticRegression(
             max_iter=1000,
-            n_jobs=-1,
             class_weight="balanced"
         )
 
