@@ -22,7 +22,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections import deque
+from collections import Counter, deque
 from contextlib import asynccontextmanager
 
 import httpx
@@ -70,36 +70,82 @@ class WAFStats:
             self.score_bins = [0] * 10
             self.attack_type_counts = {t: 0 for t in ATTACK_TYPES}
             self.recent_events: deque = deque(maxlen=100)
+            self.latency_samples_ms: deque = deque(maxlen=500)
+            self.path_counts: Counter = Counter()
+            self.second_buckets: Counter = Counter()
+            self.high_confidence_blocks = 0
+            self.uncertain_scores = 0
+            self.current_rps_2s = 0.0
+            self.peak_rps_2s = 0.0
 
     def record(self, score: float, decision: str,
-               attack_type: str, path: str, model: str):
+               attack_type: str, path: str, model: str, latency_ms: float):
         with self._lock:
+            now = time.time()
             self.total += 1
             if decision == "block":
                 self.blocked += 1
                 atype = attack_type if attack_type in ATTACK_TYPES else "unknown"
                 self.attack_type_counts[atype] += 1
+                if score >= ALERT_THRESHOLD:
+                    self.high_confidence_blocks += 1
             else:
                 self.allowed += 1
+            if 0.4 <= score < 0.6:
+                self.uncertain_scores += 1
             bin_idx = min(int(score * 10), 9)
             self.score_bins[bin_idx] += 1
+            self.latency_samples_ms.append(round(latency_ms, 2))
+            clean_path = path[:80] if path else "-"
+            self.path_counts[clean_path] += 1
+            current_sec = int(now)
+            self.second_buckets[current_sec] += 1
+            stale_before = current_sec - 10
+            for bucket_sec in list(self.second_buckets.keys()):
+                if bucket_sec < stale_before:
+                    del self.second_buckets[bucket_sec]
+            current_rps_2s = (
+                self.second_buckets.get(current_sec, 0) +
+                self.second_buckets.get(current_sec - 1, 0)
+            ) / 2.0
+            self.current_rps_2s = round(current_rps_2s, 2)
+            if current_rps_2s > self.peak_rps_2s:
+                self.peak_rps_2s = round(current_rps_2s, 2)
             self.recent_events.append({
-                "timestamp":   time.time(),
-                "path":        path[:80] if path else "-",
+                "timestamp":   now,
+                "path":        clean_path,
                 "score":       round(score, 4),
                 "decision":    decision,
                 "attack_type": attack_type,
                 "model":       model,
+                "latency_ms":  round(latency_ms, 2),
             })
 
     def snapshot(self) -> dict:
         with self._lock:
             block_rate = (self.blocked / self.total * 100) if self.total else 0.0
+            latency_samples = sorted(self.latency_samples_ms)
+            avg_latency_ms = (
+                round(sum(latency_samples) / len(latency_samples), 2)
+                if latency_samples else 0.0
+            )
+            if latency_samples:
+                p95_index = min(len(latency_samples) - 1, max(0, int(len(latency_samples) * 0.95) - 1))
+                p95_latency_ms = latency_samples[p95_index]
+            else:
+                p95_latency_ms = 0.0
             return {
                 "total":              self.total,
                 "blocked":            self.blocked,
                 "allowed":            self.allowed,
                 "block_rate":         round(block_rate, 2),
+                "avg_latency_ms":     avg_latency_ms,
+                "p95_latency_ms":     round(p95_latency_ms, 2),
+                "current_rps_2s":     self.current_rps_2s,
+                "peak_rps_2s":        self.peak_rps_2s,
+                "high_confidence_blocks": self.high_confidence_blocks,
+                "uncertain_scores":   self.uncertain_scores,
+                "top_targeted_paths": self.path_counts.most_common(5),
                 "attack_type_counts": dict(self.attack_type_counts),
                 "score_distribution": {
                     f"{i/10:.1f}-{(i+1)/10:.1f}": self.score_bins[i]
@@ -255,6 +301,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AtnLyze WAF", lifespan=lifespan)
 
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://10.14.20.100:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
@@ -274,6 +327,7 @@ def predict(
     req: PredictRequest,
     engine: Literal["baseline", "transformer", "both"] = Query("baseline"),
 ):
+    started_at = time.perf_counter()
     raw_input = req.log_line
     parsed    = parse_log_line(raw_input)
 
@@ -304,6 +358,7 @@ def predict(
             attack_type=attack_type,
             path=path,
             model=primary.get("model", engine),
+            latency_ms=(time.perf_counter() - started_at) * 1000.0,
         )
 
         # SSE push
@@ -356,6 +411,14 @@ def reset_stats():
 def demo_start_benign():
     """Start benign_crawler.py as a background subprocess."""
     with _demo_lock:
+        if "feed" not in _demo_processes or _demo_processes["feed"].poll() is not None:
+            feed = subprocess.Popen(
+                [sys.executable, "scripts/traffic/live_waf_feed.py"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            _demo_processes["feed"] = feed
+
         if "benign" in _demo_processes:
             proc = _demo_processes["benign"]
             if proc.poll() is None:
@@ -368,6 +431,13 @@ def demo_start_benign():
         )
         _demo_processes["benign"] = proc
 
+        return {"status": "started", "pid": proc.pid}
+
+
+@app.post("/demo/start-attack")
+def demo_start_attack():
+    """Start attack_runner.py as a background subprocess."""
+    with _demo_lock:
         if "feed" not in _demo_processes or _demo_processes["feed"].poll() is not None:
             feed = subprocess.Popen(
                 [sys.executable, "scripts/traffic/live_waf_feed.py"],
@@ -376,13 +446,6 @@ def demo_start_benign():
             )
             _demo_processes["feed"] = feed
 
-        return {"status": "started", "pid": proc.pid}
-
-
-@app.post("/demo/start-attack")
-def demo_start_attack():
-    """Start attack_runner.py as a background subprocess."""
-    with _demo_lock:
         if "attack" in _demo_processes:
             proc = _demo_processes["attack"]
             if proc.poll() is None:
@@ -394,6 +457,7 @@ def demo_start_attack():
             stderr=subprocess.DEVNULL,
         )
         _demo_processes["attack"] = proc
+
         return {"status": "started", "pid": proc.pid}
 
 
