@@ -68,15 +68,37 @@ class WAFStats:
             self.blocked = 0
             self.allowed = 0
             self.score_bins = [0] * 10
+            self.engine_score_bins = {
+                "baseline": [0] * 10,
+                "transformer": [0] * 10,
+            }
             self.attack_type_counts = {t: 0 for t in ATTACK_TYPES}
             self.recent_events: deque = deque(maxlen=100)
+            self.recent_decisions: deque = deque()
+            self.recent_alerts: deque = deque()
+            self.recent_scores: deque = deque()
             self.latency_samples_ms: deque = deque(maxlen=500)
+            self.engine_latency_samples_ms = {
+                "baseline": deque(maxlen=500),
+                "transformer": deque(maxlen=500),
+            }
             self.path_counts: Counter = Counter()
             self.second_buckets: Counter = Counter()
             self.high_confidence_blocks = 0
             self.uncertain_scores = 0
             self.current_rps_2s = 0.0
             self.peak_rps_2s = 0.0
+            self.reset_started_at = time.time()
+            self.engine_blocked = {
+                "baseline": 0,
+                "transformer": 0,
+            }
+            self.unknown_blocked = 0
+            self.unknown_allowed = 0
+            self.comparison_total = 0
+            self.comparison_agreements = 0
+            self.comparison_disagreements = 0
+            self.recent_disagreement_events: deque = deque(maxlen=20)
 
     def record(self, score: float, decision: str,
                attack_type: str, path: str, model: str, latency_ms: float):
@@ -87,12 +109,27 @@ class WAFStats:
                 self.blocked += 1
                 atype = attack_type if attack_type in ATTACK_TYPES else "unknown"
                 self.attack_type_counts[atype] += 1
+                if atype == "unknown":
+                    self.unknown_blocked += 1
                 if score >= ALERT_THRESHOLD:
                     self.high_confidence_blocks += 1
+                    self.recent_alerts.append(now)
             else:
                 self.allowed += 1
+                if attack_type == "unknown":
+                    self.unknown_allowed += 1
             if 0.4 <= score < 0.6:
                 self.uncertain_scores += 1
+            self.recent_decisions.append((now, decision))
+            self.recent_scores.append((now, float(score)))
+            recent_cutoff = now - 30
+            previous_cutoff = now - 60
+            while self.recent_decisions and self.recent_decisions[0][0] < recent_cutoff:
+                self.recent_decisions.popleft()
+            while self.recent_alerts and self.recent_alerts[0] < recent_cutoff:
+                self.recent_alerts.popleft()
+            while self.recent_scores and self.recent_scores[0][0] < previous_cutoff:
+                self.recent_scores.popleft()
             bin_idx = min(int(score * 10), 9)
             self.score_bins[bin_idx] += 1
             self.latency_samples_ms.append(round(latency_ms, 2))
@@ -121,6 +158,43 @@ class WAFStats:
                 "latency_ms":  round(latency_ms, 2),
             })
 
+    def record_engine_result(self, engine_name: str, decision: str, latency_ms: float):
+        with self._lock:
+            if engine_name not in self.engine_latency_samples_ms:
+                return
+            self.engine_latency_samples_ms[engine_name].append(round(latency_ms, 2))
+            if decision == "block":
+                self.engine_blocked[engine_name] += 1
+
+    def record_engine_score(self, engine_name: str, score: float):
+        with self._lock:
+            if engine_name not in self.engine_score_bins:
+                return
+            bin_idx = min(int(score * 10), 9)
+            self.engine_score_bins[engine_name][bin_idx] += 1
+
+    def record_engine_comparison(
+        self,
+        path: str,
+        baseline_result: dict,
+        transformer_result: dict,
+    ):
+        with self._lock:
+            self.comparison_total += 1
+            if baseline_result["decision"] == transformer_result["decision"]:
+                self.comparison_agreements += 1
+                return
+
+            self.comparison_disagreements += 1
+            self.recent_disagreement_events.append({
+                "timestamp": time.time(),
+                "path": (path or "-")[:80],
+                "baseline_decision": baseline_result["decision"],
+                "baseline_score": round(float(baseline_result["score"]), 4),
+                "transformer_decision": transformer_result["decision"],
+                "transformer_score": round(float(transformer_result["score"]), 4),
+            })
+
     def snapshot(self) -> dict:
         with self._lock:
             block_rate = (self.blocked / self.total * 100) if self.total else 0.0
@@ -130,25 +204,92 @@ class WAFStats:
                 if latency_samples else 0.0
             )
             if latency_samples:
+                p50_index = min(len(latency_samples) - 1, max(0, int(len(latency_samples) * 0.50) - 1))
                 p95_index = min(len(latency_samples) - 1, max(0, int(len(latency_samples) * 0.95) - 1))
+                p50_latency_ms = latency_samples[p50_index]
                 p95_latency_ms = latency_samples[p95_index]
             else:
+                p50_latency_ms = 0.0
                 p95_latency_ms = 0.0
+            recent_total = len(self.recent_decisions)
+            recent_blocked = sum(1 for _, decision in self.recent_decisions if decision == "block")
+            recent_block_rate = (recent_blocked / recent_total * 100) if recent_total else 0.0
+            now = time.time()
+            recent_scores = [score for ts, score in self.recent_scores if ts >= now - 30]
+            previous_scores = [score for ts, score in self.recent_scores if now - 60 <= ts < now - 30]
+            recent_avg_confidence = (
+                round(sum(recent_scores) / len(recent_scores), 4)
+                if recent_scores else 0.0
+            )
+            previous_avg_confidence = (
+                round(sum(previous_scores) / len(previous_scores), 4)
+                if previous_scores else 0.0
+            )
+            confidence_drift_delta = round(recent_avg_confidence - previous_avg_confidence, 4)
+            baseline_latency_samples = sorted(self.engine_latency_samples_ms["baseline"])
+            transformer_latency_samples = sorted(self.engine_latency_samples_ms["transformer"])
+            baseline_avg_latency_ms = (
+                round(sum(baseline_latency_samples) / len(baseline_latency_samples), 2)
+                if baseline_latency_samples else 0.0
+            )
+            transformer_avg_latency_ms = (
+                round(sum(transformer_latency_samples) / len(transformer_latency_samples), 2)
+                if transformer_latency_samples else 0.0
+            )
+            comparison_agreement_rate = (
+                self.comparison_agreements / self.comparison_total * 100
+                if self.comparison_total else 0.0
+            )
+            attack_diversity = sum(
+                1 for attack_type, count in self.attack_type_counts.items()
+                if attack_type != "unknown" and count > 0
+            )
             return {
                 "total":              self.total,
                 "blocked":            self.blocked,
                 "allowed":            self.allowed,
                 "block_rate":         round(block_rate, 2),
                 "avg_latency_ms":     avg_latency_ms,
+                "p50_latency_ms":     round(p50_latency_ms, 2),
                 "p95_latency_ms":     round(p95_latency_ms, 2),
                 "current_rps_2s":     self.current_rps_2s,
                 "peak_rps_2s":        self.peak_rps_2s,
+                "recent_block_rate_30s": round(recent_block_rate, 2),
+                "recent_window_seconds": 30,
+                "recent_events_30s":  recent_total,
+                "recent_alert_count_30s": len(self.recent_alerts),
+                "recent_avg_confidence": recent_avg_confidence,
+                "previous_avg_confidence": previous_avg_confidence,
+                "confidence_drift_delta": confidence_drift_delta,
                 "high_confidence_blocks": self.high_confidence_blocks,
                 "uncertain_scores":   self.uncertain_scores,
+                "engine_name":        "transformer-onnx",
+                "uptime_since_reset_s": int(max(0, time.time() - self.reset_started_at)),
+                "baseline_blocked":   self.engine_blocked["baseline"],
+                "transformer_blocked": self.engine_blocked["transformer"],
+                "baseline_avg_latency_ms": baseline_avg_latency_ms,
+                "transformer_avg_latency_ms": transformer_avg_latency_ms,
+                "comparison_total":   self.comparison_total,
+                "comparison_agreement_count": self.comparison_agreements,
+                "comparison_agreement_rate": round(comparison_agreement_rate, 2),
+                "comparison_disagreement_count": self.comparison_disagreements,
+                "recent_disagreement_events": list(self.recent_disagreement_events),
+                "unique_paths_seen":  len(self.path_counts),
+                "attack_diversity":   attack_diversity,
+                "unknown_blocked":    self.unknown_blocked,
+                "unknown_allowed":    self.unknown_allowed,
                 "top_targeted_paths": self.path_counts.most_common(5),
                 "attack_type_counts": dict(self.attack_type_counts),
                 "score_distribution": {
                     f"{i/10:.1f}-{(i+1)/10:.1f}": self.score_bins[i]
+                    for i in range(10)
+                },
+                "baseline_score_distribution": {
+                    f"{i/10:.1f}-{(i+1)/10:.1f}": self.engine_score_bins["baseline"][i]
+                    for i in range(10)
+                },
+                "transformer_score_distribution": {
+                    f"{i/10:.1f}-{(i+1)/10:.1f}": self.engine_score_bins["transformer"][i]
                     for i in range(10)
                 },
                 "recent_events": list(self.recent_events),
@@ -339,12 +480,30 @@ def predict(
         text_for_transformer = normalize_input(raw_input)
 
     response = {}
+    baseline_latency_ms = None
+    transformer_latency_ms = None
 
     if engine in ("baseline", "both"):
+        baseline_started_at = time.perf_counter()
         response["baseline"] = baseline_engine.analyze_log_line(text_for_baseline)
+        baseline_latency_ms = (time.perf_counter() - baseline_started_at) * 1000.0
+        _stats.record_engine_result(
+            "baseline",
+            response["baseline"]["decision"],
+            baseline_latency_ms,
+        )
+        _stats.record_engine_score("baseline", response["baseline"]["score"])
 
     if engine in ("transformer", "both"):
+        transformer_started_at = time.perf_counter()
         response["transformer"] = transformer_engine.analyze(text_for_transformer)
+        transformer_latency_ms = (time.perf_counter() - transformer_started_at) * 1000.0
+        _stats.record_engine_result(
+            "transformer",
+            response["transformer"]["decision"],
+            transformer_latency_ms,
+        )
+        _stats.record_engine_score("transformer", response["transformer"]["score"])
 
     primary = response.get("transformer") or response.get("baseline")
     if primary:
@@ -379,6 +538,14 @@ def predict(
             _schedule_alert(
                 send_attack_alert(primary["score"], attack_type, path or "-")
             )
+
+    if "baseline" in response and "transformer" in response:
+        comparison_path = parsed.get("path", "-") if parsed else "-"
+        _stats.record_engine_comparison(
+            comparison_path,
+            response["baseline"],
+            response["transformer"],
+        )
 
     return response
 

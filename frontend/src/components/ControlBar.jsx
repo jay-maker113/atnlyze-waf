@@ -5,12 +5,32 @@ import { C } from '../theme';
 
 const styles = {
   root: {
+    display: 'grid',
+    gridTemplateColumns: '1fr auto 1fr',
+    alignItems: 'center',
+    padding: '10px 18px',
+    gap: '12px',
+  },
+  credit: {
+    justifySelf: 'start',
+    fontSize: '12px',
+    color:'#8B86A8',
+    letterSpacing: '0.03em',
+  },
+  creditName: {
+    color: '#C4B5FD',
+    fontWeight: 700,
+  },
+  pillRow: {
+    justifySelf: 'center',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     gap: '8px',
-    padding: '10px 18px',
     flexWrap: 'wrap',
+  },
+  spacer: {
+    justifySelf: 'end',
   },
   pill: {
     display: 'inline-flex',
@@ -49,13 +69,19 @@ function prettyStatus(status) {
 export function ControlBar({ demoStatus }) {
   return (
     <div style={styles.root}>
-      {['benign', 'attack', 'feed'].map((name) => (
-        <div key={name} style={styles.pill}>
-          <span style={styles.label}>{name}</span>
-          <span style={{ ...styles.dot, backgroundColor: processIndicator(demoStatus?.[name]) }} />
-          <span>{prettyStatus(demoStatus?.[name])}</span>
-        </div>
-      ))}
+      <div style={styles.credit}>
+        Developer - <span style={styles.creditName}>Jay Vagadia</span>
+      </div>
+      <div style={styles.pillRow}>
+        {['benign', 'attack', 'feed'].map((name) => (
+          <div key={name} style={styles.pill}>
+            <span style={styles.label}>{name}</span>
+            <span style={{ ...styles.dot, backgroundColor: processIndicator(demoStatus?.[name]) }} />
+            <span>{prettyStatus(demoStatus?.[name])}</span>
+          </div>
+        ))}
+      </div>
+      <div style={styles.spacer} />
     </div>
   );
 }

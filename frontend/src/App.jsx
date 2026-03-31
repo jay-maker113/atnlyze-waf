@@ -94,6 +94,16 @@ const styles = {
     backgroundColor: C.amber,
     color: '#2B1803',
   },
+  compareBtn: {
+    backgroundColor: 'rgba(30, 45, 61, 0.95)',
+    color: C.text,
+    border: `1px solid ${C.grid}`,
+  },
+  compareBtnActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.18)',
+    color: C.emerald,
+    border: `1px solid rgba(16, 185, 129, 0.45)`,
+  },
   headerBtnDisabled: {
     opacity: 0.6,
     cursor: 'not-allowed',
@@ -133,6 +143,7 @@ export default function App() {
   const [arenaEvents, setArenaEvents] = useState([]);
   const [alert, setAlert] = useState(null);
   const [busyAction, setBusyAction] = useState(null);
+  const [showComparison, setShowComparison] = useState(false);
 
   // Stats polling -- sparkline + counters + demo process status
   const { stats, sparkline, demoStatus, error: statsError } = useStats();
@@ -223,6 +234,17 @@ export default function App() {
             type="button"
             style={{
               ...styles.headerBtn,
+              ...styles.compareBtn,
+              ...(showComparison ? styles.compareBtnActive : {}),
+            }}
+            onClick={() => setShowComparison((prev) => !prev)}
+          >
+            {showComparison ? 'Hide Comparison' : 'Show Comparison'}
+          </button>
+          <button
+            type="button"
+            style={{
+              ...styles.headerBtn,
               ...styles.resetBtn,
               ...(busyAction ? styles.headerBtnDisabled : {}),
             }}
@@ -247,6 +269,7 @@ export default function App() {
             stats={stats}
             sparkline={sparkline}
             error={statsError}
+            showComparison={showComparison}
           />
         </div>
       </div>

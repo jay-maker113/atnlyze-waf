@@ -1,6 +1,7 @@
 // frontend/src/components/StatsPanel.jsx
 // Right-side analytics panel aligned to the Phase 4 spec.
 
+import { useState } from 'react';
 import {
   Area,
   AreaChart,
@@ -34,6 +35,8 @@ const ATTACK_COLORS = {
 };
 
 const OCEAN = '#38BDF8';
+const BASELINE_BAR = '#38BDF8';
+const TRANSFORMER_BAR = '#F59E0B';
 const HISTOGRAM_COLORS = [
   '#10B981',
   '#22C55E',
@@ -97,7 +100,7 @@ const styles = {
   },
   snapshotSectionBody: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1.35fr) minmax(320px, 0.85fr)',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
     gap: '16px',
     alignItems: 'start',
   },
@@ -111,7 +114,7 @@ const styles = {
   },
   sectionTopGrid: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1.35fr) minmax(320px, 0.85fr)',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
     gap: '16px',
     alignItems: 'baseline',
     marginBottom: '14px',
@@ -143,8 +146,8 @@ const styles = {
     background: 'linear-gradient(180deg, rgba(30,45,61,0.78) 0%, rgba(15,25,35,0.92) 100%)',
     border: `1px solid ${C.grid}`,
     borderRadius: '12px',
-    padding: '14px',
-    minHeight: '114px',
+    padding: '12px 14px',
+    minHeight: '100.6px',
   },
   statLabel: {
     fontSize: '11px',
@@ -171,7 +174,7 @@ const styles = {
   },
   telemetryGrid: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1fr)',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
     gap: '12px',
   },
   telemetryCard: {
@@ -198,6 +201,40 @@ const styles = {
   telemetrySub: {
     fontSize: '12px',
     color: C.muted,
+  },
+  sectionActionWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  sectionToggleBtn: {
+    appearance: 'none',
+    borderRadius: '999px',
+    padding: '6px 10px',
+    fontSize: '11px',
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    cursor: 'pointer',
+    border: `1px solid ${C.grid}`,
+    backgroundColor: 'rgba(15, 25, 35, 0.72)',
+    color: C.text,
+  },
+  sectionToggleBtnActive: {
+    border: `1px solid rgba(56, 189, 248, 0.45)`,
+    backgroundColor: 'rgba(56, 189, 248, 0.14)',
+    color: BASELINE_BAR,
+  },
+  comparisonGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: '12px',
+  },
+  comparisonCard: {
+    background: 'linear-gradient(180deg, rgba(30,45,61,0.78) 0%, rgba(15,25,35,0.92) 100%)',
+    border: `1px solid ${C.grid}`,
+    borderRadius: '12px',
+    padding: '14px',
+    minHeight: '96px',
   },
   split: {
     display: 'grid',
@@ -361,6 +398,27 @@ function formatTime(timestamp) {
   });
 }
 
+function formatDuration(totalSeconds) {
+  const seconds = Math.max(0, Number(totalSeconds ?? 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = Math.floor(seconds % 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${remainder}s`;
+  }
+  return `${remainder}s`;
+}
+
+function formatSignedPct(value) {
+  const num = Number(value ?? 0) * 100;
+  const sign = num > 0 ? '+' : '';
+  return `${sign}${num.toFixed(1)}%`;
+}
+
 function buildAttackChartData(attackTypeCounts) {
   return Object.entries(attackTypeCounts ?? {})
     .filter(([, count]) => count > 0)
@@ -372,10 +430,11 @@ function buildAttackChartData(attackTypeCounts) {
     .sort((a, b) => b.value - a.value);
 }
 
-function buildHistogramData(scoreDistribution) {
-  return Object.entries(scoreDistribution ?? {}).map(([range, count], index) => ({
+function buildHistogramData(transformerDistribution, baselineDistribution) {
+  return Object.keys(transformerDistribution ?? {}).map((range, index) => ({
     range,
-    count,
+    transformerCount: transformerDistribution?.[range] ?? 0,
+    baselineCount: baselineDistribution?.[range] ?? 0,
     color: HISTOGRAM_COLORS[index % HISTOGRAM_COLORS.length],
   }));
 }
@@ -383,9 +442,9 @@ function buildHistogramData(scoreDistribution) {
 function buildTelemetryCards(stats) {
   return [
     {
-      label: 'Avg Latency',
-      value: `${Number(stats.avg_latency_ms ?? 0).toFixed(1)} ms`,
-      sub: `P95 ${Number(stats.p95_latency_ms ?? 0).toFixed(1)} ms`,
+      label: 'Current Throughput',
+      value: `${Number(stats.current_rps_2s ?? 0).toFixed(1)}/s`,
+      sub: 'Backend-measured live RPS',
     },
     {
       label: 'Peak Throughput',
@@ -393,9 +452,34 @@ function buildTelemetryCards(stats) {
       sub: 'Peak observed in 2s window',
     },
     {
+      label: 'Inference Latency',
+      value: `${Number(stats.avg_latency_ms ?? 0).toFixed(1)} ms`,
+      sub: `P50 ${Number(stats.p50_latency_ms ?? 0).toFixed(1)} ms · P95 ${Number(stats.p95_latency_ms ?? 0).toFixed(1)} ms`,
+    },
+    {
+      label: 'Recent Block Rate',
+      value: formatPct(stats.recent_block_rate_30s),
+      sub: `Rolling ${formatInt(stats.recent_window_seconds)}s decision window`,
+    },
+    {
       label: 'High-Confidence Blocks',
       value: formatInt(stats.high_confidence_blocks),
       sub: `${formatInt(stats.uncertain_scores)} uncertain-score events`,
+    },
+    {
+      label: 'Primary Engine',
+      value: stats.engine_name || 'transformer-onnx-primary',
+      sub: 'Primary decision path in /predict',
+    },
+    {
+      label: 'Uptime Since Reset',
+      value: formatDuration(stats.uptime_since_reset_s),
+      sub: 'Elapsed since last stats reset',
+    },
+    {
+      label: 'Confidence Drift',
+      value: formatSignedPct(stats.confidence_drift_delta),
+      sub: `Last ${formatInt(stats.recent_window_seconds)}s vs previous ${formatInt(stats.recent_window_seconds)}s`,
     },
   ];
 }
@@ -422,6 +506,51 @@ function buildStatCards(stats) {
       value: formatPct(stats.block_rate),
       sub: 'Live decision ratio',
     },
+    {
+      label: 'Unique Paths',
+      value: formatInt(stats.unique_paths_seen),
+      sub: 'Distinct routes observed',
+    },
+    {
+      label: 'Attack Diversity',
+      value: formatInt(stats.attack_diversity),
+      sub: `Unknown blocked: ${formatInt(stats.unknown_blocked)} · Unknown allowed: ${formatInt(stats.unknown_allowed)}`,
+    },
+  ];
+}
+
+function buildComparisonCards(stats) {
+  return [
+    {
+      label: 'Transformer Blocked',
+      value: formatInt(stats.transformer_blocked),
+      sub: 'Primary engine block decisions',
+    },
+    {
+      label: 'Baseline Blocked',
+      value: formatInt(stats.baseline_blocked),
+      sub: 'Shadow baseline block decisions',
+    },
+    {
+      label: 'Agreement Rate',
+      value: formatPct(stats.comparison_agreement_rate),
+      sub: `${formatInt(stats.comparison_agreement_count)} of ${formatInt(stats.comparison_total)} compared requests`,
+    },
+    {
+      label: 'Disagreements',
+      value: formatInt(stats.comparison_disagreement_count),
+      sub: 'Requests where model decisions diverged',
+    },
+    {
+      label: 'Transformer Latency',
+      value: `${Number(stats.transformer_avg_latency_ms ?? 0).toFixed(1)} ms`,
+      sub: 'Average inference latency',
+    },
+    {
+      label: 'Baseline Latency',
+      value: `${Number(stats.baseline_avg_latency_ms ?? 0).toFixed(1)} ms`,
+      sub: 'Average inference latency',
+    },
   ];
 }
 
@@ -446,11 +575,16 @@ function decisionTextStyle(decision) {
   };
 }
 
-export function StatsPanel({ stats, sparkline, error }) {
+export function StatsPanel({ stats, sparkline, error, showComparison = false }) {
+  const [showBaselineDistribution, setShowBaselineDistribution] = useState(false);
   const attackChartData = buildAttackChartData(stats.attack_type_counts);
-  const histogramData = buildHistogramData(stats.score_distribution);
+  const histogramData = buildHistogramData(
+    stats.transformer_score_distribution ?? stats.score_distribution,
+    stats.baseline_score_distribution,
+  );
   const statCards = buildStatCards(stats);
   const telemetryCards = buildTelemetryCards(stats);
+  const comparisonCards = buildComparisonCards(stats);
   const recentEvents = (stats.recent_events ?? [])
     .map((event, index, source) => ({
       ...event,
@@ -520,6 +654,24 @@ export function StatsPanel({ stats, sparkline, error }) {
             </div>
           </div>
         </section>
+
+        {showComparison ? (
+          <section style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Model Comparison</h2>
+              <span style={styles.sectionNote}>Baseline shadow vs transformer-onnx primary</span>
+            </div>
+            <div style={styles.comparisonGrid}>
+              {comparisonCards.map((card) => (
+                <div key={card.label} style={styles.comparisonCard}>
+                  <div style={styles.telemetryLabel}>{card.label}</div>
+                  <div style={styles.telemetryValue}>{card.value}</div>
+                  <div style={styles.telemetrySub}>{card.sub}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section style={styles.section}>
           <div style={styles.sectionHeader}>
@@ -670,15 +822,29 @@ export function StatsPanel({ stats, sparkline, error }) {
             )}
           </section>
 
-          <section style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Score Distribution</h2>
-              <span style={styles.sectionNote}>Model confidence distribution</span>
+        <section style={styles.section}>
+          <div style={styles.sectionHeader}>
+            <h2 style={styles.sectionTitle}>Score Distribution</h2>
+            <div style={styles.sectionActionWrap}>
+              <span style={styles.sectionNote}>
+                {showBaselineDistribution ? 'Transformer vs baseline confidence distribution' : 'Transformer confidence distribution'}
+              </span>
+              <button
+                type="button"
+                style={{
+                  ...styles.sectionToggleBtn,
+                  ...(showBaselineDistribution ? styles.sectionToggleBtnActive : {}),
+                }}
+                onClick={() => setShowBaselineDistribution((prev) => !prev)}
+              >
+                {showBaselineDistribution ? 'Hide Baseline' : 'Show Baseline'}
+              </button>
             </div>
-            {histogramData.length ? (
-              <div style={styles.chartWrap}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={histogramData} margin={{ top: 4, right: 4, left: -10, bottom: 8 }}>
+          </div>
+          {histogramData.length ? (
+            <div style={styles.chartWrap}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={histogramData} margin={{ top: 4, right: 4, left: -10, bottom: 8 }}>
                     <XAxis
                       dataKey="range"
                       stroke={GOLD}
@@ -694,10 +860,14 @@ export function StatsPanel({ stats, sparkline, error }) {
                       tickLine={false}
                       axisLine={false}
                       width={24}
+                      allowDecimals={false}
                       tick={{ fontSize: 11, fill: GOLD }}
                     />
                     <Tooltip
-                      formatter={(value) => [value, 'Events']}
+                      formatter={(value, name) => [
+                        value,
+                        name === 'baselineCount' ? 'Baseline events' : 'Transformer events',
+                      ]}
                       contentStyle={{
                         backgroundColor: C.surface,
                         border: `1px solid ${C.grid}`,
@@ -705,11 +875,20 @@ export function StatsPanel({ stats, sparkline, error }) {
                         color: C.text,
                       }}
                     />
-                    <Bar dataKey="count" radius={[6, 6, 0, 0]} isAnimationActive={false}>
+                    <Bar dataKey="transformerCount" name="transformerCount" radius={[6, 6, 0, 0]} isAnimationActive={false}>
                       {histogramData.map((entry) => (
                         <Cell key={entry.range} fill={entry.color} />
                       ))}
                     </Bar>
+                    {showBaselineDistribution ? (
+                      <Bar
+                        dataKey="baselineCount"
+                        name="baselineCount"
+                        radius={[6, 6, 0, 0]}
+                        isAnimationActive={false}
+                        fill={BASELINE_BAR}
+                      />
+                    ) : null}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
