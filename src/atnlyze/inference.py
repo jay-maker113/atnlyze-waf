@@ -5,12 +5,17 @@ import html
 
 def normalize_input(text: str) -> str:
     """
-    Canonicalize input similar to real WAF preprocessing
+    Canonicalize input similar to real WAF preprocessing.
+    Loop until idempotent — handles double/triple URL encoding
+    that attackers use to bypass single-pass WAFs.
     """
-    text = urllib.parse.unquote(text)   # Decode URL encoding
-    text = html.unescape(text)          # Decode HTML entities
-    text = text.lower()                 # Normalize case
-    return text
+    for _ in range(5):  # cap at 5 to prevent infinite loop on pathological input
+        decoded = urllib.parse.unquote(text)
+        decoded = html.unescape(decoded)
+        if decoded == text:
+            break
+        text = decoded
+    return text.lower()
 
 
 class WAFInferenceEngine:

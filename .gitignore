@@ -20,6 +20,8 @@ venv.bak/
 # =========================
 .env
 .envrc
+frontend/.env
+frontend/.env.*
 
 # =========================
 # IDE / Editor configs

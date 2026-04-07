@@ -445,7 +445,7 @@ app = FastAPI(title="AtnLyze WAF", lifespan=lifespan)
 from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://10.14.20.100:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://10.175.137.100:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -563,7 +563,7 @@ async def get_stats():
         )
         ambiguous_rate = (ambiguous / snapshot["total"]) * 100
         if ambiguous_rate > 30:
-            asyncio.create_task(send_probing_alert(ambiguous_rate))
+            _schedule_alert(send_probing_alert(ambiguous_rate))
 
     return snapshot
 
