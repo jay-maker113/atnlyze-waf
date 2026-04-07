@@ -5,10 +5,10 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
 
-DATA_DIR   = "data/processed"
-MODEL_DIR  = "models"
+DATA_DIR = "data/processed"
+MODEL_DIR = "models"
 MODEL_PATH = os.path.join(MODEL_DIR, "baseline.joblib")
-VEC_PATH   = os.path.join(MODEL_DIR, "vectorizer.joblib")
+VEC_PATH = os.path.join(MODEL_DIR, "vectorizer.joblib")
 
 
 def load_data(split):
@@ -20,12 +20,12 @@ def main():
     os.makedirs(MODEL_DIR, exist_ok=True)
 
     X_train, y_train = load_data("v2_train")
-    X_val, y_val     = load_data("v2_val")
+    X_val, y_val = load_data("v2_val")
 
     print(f"Train samples : {len(X_train)} "
-          f"(benign={sum(y_train==0)}, malicious={sum(y_train==1)})")
+          f"(benign={sum(y_train == 0)}, malicious={sum(y_train == 1)})")
     print(f"Val samples   : {len(X_val)} "
-          f"(benign={sum(y_val==0)}, malicious={sum(y_val==1)})")
+          f"(benign={sum(y_val == 0)}, malicious={sum(y_val == 1)})")
 
     print("\nVectorizing text...")
     vectorizer = TfidfVectorizer(
@@ -34,7 +34,7 @@ def main():
         stop_words=None,     # attack keywords like 'or', 'select' matter
     )
     X_train_vec = vectorizer.fit_transform(X_train)
-    X_val_vec   = vectorizer.transform(X_val)
+    X_val_vec = vectorizer.transform(X_val)
 
     print("Training Logistic Regression...")
     model = LogisticRegression(

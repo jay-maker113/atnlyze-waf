@@ -24,8 +24,8 @@ import pandas as pd
 from atnlyze.utils import ATTACK_TYPES
 
 V2_TRAIN = "data/processed/v2_train.csv"
-V2_VAL   = "data/processed/v2_val.csv"
-V2_TEST  = "data/processed/v2_test.csv"
+V2_VAL = "data/processed/v2_val.csv"
+V2_TEST = "data/processed/v2_test.csv"
 V2_FILES = [V2_TRAIN, V2_VAL, V2_TEST]
 
 # Required columns for baseline CSVs (text + label + attack_type)
@@ -68,7 +68,7 @@ def test_attack_types_expected_members():
         "php", "scanner", "path", "nosql", "ldap", "unknown"
     }
     missing = expected - ATTACK_TYPES
-    extra   = ATTACK_TYPES - expected
+    extra = ATTACK_TYPES - expected
     assert not missing, f"ATTACK_TYPES is missing expected members: {missing}"
     assert not extra,   f"ATTACK_TYPES has unexpected members: {extra} — update this test if intentional"
 
@@ -160,8 +160,8 @@ def test_v2_class_balance_not_degenerate():
 def test_v2_no_train_test_overlap():
     """ModSec source-based split means zero text overlap between train and test."""
     train = set(pd.read_csv(V2_TRAIN)["text"])
-    val   = set(pd.read_csv(V2_VAL)["text"])
-    test  = set(pd.read_csv(V2_TEST)["text"])
+    val = set(pd.read_csv(V2_VAL)["text"])
+    test = set(pd.read_csv(V2_TEST)["text"])
 
     assert not (train & test), \
         f"{len(train & test)} samples overlap between v2_train and v2_test"
@@ -188,4 +188,4 @@ def test_v2_modsec_in_test_only():
             pytest.skip("'source' column not present — skipping ModSec split check")
         modsec_in_split = (df["source"] == "modsec").sum()
         assert modsec_in_split == 0, \
-            f"{path}: {modsec_in_split} ModSec rows found outside test set"
+            f"{path}: {modsec_in_split} ModSec rows found outside test set"

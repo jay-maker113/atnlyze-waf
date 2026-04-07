@@ -12,6 +12,7 @@ Endpoints:
 
 from typing import Literal
 from fastapi import FastAPI, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import asyncio
@@ -37,15 +38,15 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-MODEL_PATH      = os.getenv("MODEL_PATH",      "models/baseline.joblib")
+MODEL_PATH = os.getenv("MODEL_PATH", "models/baseline.joblib")
 VECTORIZER_PATH = os.getenv("VECTORIZER_PATH", "models/vectorizer.joblib")
-THRESHOLD       = float(os.getenv("THRESHOLD", "0.5"))
+THRESHOLD = float(os.getenv("THRESHOLD", "0.5"))
 ALERT_THRESHOLD = float(os.getenv("ALERT_THRESHOLD", "0.9"))
-NTFY_TOPIC      = os.getenv("NTFY_TOPIC", "")
-NTFY_URL        = "https://ntfy.sh"
-ALERT_COOLDOWN  = 60  # seconds between notifications
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
+NTFY_URL = "https://ntfy.sh"
+ALERT_COOLDOWN = 60  # seconds between notifications
 
-baseline_engine    = None
+baseline_engine = None
 transformer_engine = None
 _event_loop: asyncio.AbstractEventLoop | None = None
 
@@ -64,7 +65,7 @@ class WAFStats:
 
     def reset(self):
         with self._lock:
-            self.total   = 0
+            self.total = 0
             self.blocked = 0
             self.allowed = 0
             self.score_bins = [0] * 10
@@ -303,7 +304,7 @@ _stats = WAFStats()
 
 class SSERegistry:
     def __init__(self):
-        self._lock    = threading.Lock()
+        self._lock = threading.Lock()
         self._queues: dict[int, asyncio.Queue] = {}
         self._next_id = 0
 
@@ -442,7 +443,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AtnLyze WAF", lifespan=lifespan)
 
-from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:3000", "http://10.175.137.100:5173"],
@@ -451,6 +451,7 @@ app.add_middleware(
 )
 
 # ── Models ────────────────────────────────────────────────────────────────────
+
 
 class PredictRequest(BaseModel):
     log_line: str
@@ -470,7 +471,7 @@ def predict(
 ):
     started_at = time.perf_counter()
     raw_input = req.log_line
-    parsed    = parse_log_line(raw_input)
+    parsed = parse_log_line(raw_input)
 
     text_for_baseline = normalize_input(parsed["raw"] if parsed else raw_input)
 
@@ -508,8 +509,8 @@ def predict(
     primary = response.get("transformer") or response.get("baseline")
     if primary:
         attack_source = text_for_transformer if parsed else text_for_baseline
-        attack_type   = detect_attack_type(attack_source)
-        path          = parsed.get("path", "-") if parsed else "-"
+        attack_type = detect_attack_type(attack_source)
+        path = parsed.get("path", "-") if parsed else "-"
 
         _stats.record(
             score=primary["score"],
