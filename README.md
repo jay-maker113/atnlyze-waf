@@ -21,6 +21,11 @@
 
 ---
 
+> 🗺️ **[Explore the Interactive Codebase Architecture Graph →](https://jay-maker113.github.io/atnlyze-waf/code_visualizer.html)**
+> *Force-directed network of every file, module, and dependency in the project.*
+
+---
+
 ## 📊 Performance at a Glance
 
 | Metric | Value |
