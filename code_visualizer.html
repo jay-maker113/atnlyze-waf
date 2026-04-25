@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AtnLyze WAF — Full Codebase Architecture</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#0a0e1a;color:#e2e8f0;font-family:'Inter',sans-serif;overflow:hidden}
+        #mynetwork{width:100vw;height:100vh}
+
+        /* ── Header ── */
+        #header{position:fixed;top:0;left:0;right:0;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:linear-gradient(180deg,rgba(10,14,26,.95) 60%,rgba(10,14,26,0));z-index:20;pointer-events:none}
+        #header h1{font-size:22px;font-weight:700;background:linear-gradient(135deg,#38bdf8,#a78bfa,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+        #header .sub{font-size:12px;color:#64748b;margin-top:2px;font-family:'JetBrains Mono',monospace}
+        #stats{font-family:'JetBrains Mono',monospace;font-size:12px;color:#64748b;display:flex;gap:18px}
+        #stats span{color:#94a3b8}
+
+        /* ── Legend ── */
+        #legend{position:fixed;bottom:20px;left:20px;background:rgba(15,23,42,.85);backdrop-filter:blur(12px);border:1px solid #1e293b;border-radius:14px;padding:16px 20px;z-index:20;max-height:calc(100vh - 100px);overflow-y:auto}
+        #legend h3{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#475569;margin-bottom:10px}
+        .lg{display:flex;align-items:center;gap:9px;margin-bottom:6px;font-size:12px;color:#cbd5e1}
+        .lg .dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+
+        /* ── Info Panel ── */
+        #info{position:fixed;top:70px;right:20px;width:300px;background:rgba(15,23,42,.9);backdrop-filter:blur(12px);border:1px solid #1e293b;border-radius:14px;padding:20px;z-index:20;display:none;font-size:13px;line-height:1.6}
+        #info h3{font-size:15px;font-weight:600;margin-bottom:8px;color:#f1f5f9}
+        #info .path{font-family:'JetBrains Mono',monospace;font-size:11px;color:#64748b;word-break:break-all;margin-bottom:10px}
+        #info .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;margin-right:4px}
+        #info .conns{margin-top:12px;padding-top:10px;border-top:1px solid #1e293b;color:#94a3b8}
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <div>
+        <h1>AtnLyze WAF — Codebase Graph</h1>
+        <div class="sub">Interactive Architecture & Dependency Network</div>
+    </div>
+    <div id="stats">
+        <div>Nodes: <span id="nc">0</span></div>
+        <div>Edges: <span id="ec">0</span></div>
+        <div>Scroll to zoom · Drag to pan · Click node for details</div>
+    </div>
+</div>
+
+<div id="legend">
+    <h3>Layer Legend</h3>
+    <div class="lg"><div class="dot" style="background:#facc15"></div>API Gateway</div>
+    <div class="lg"><div class="dot" style="background:#22c55e"></div>Core Engine (atnlyze/)</div>
+    <div class="lg"><div class="dot" style="background:#06b6d4"></div>Model Definitions</div>
+    <div class="lg"><div class="dot" style="background:#3b82f6"></div>Saved Weights & Checkpoints</div>
+    <div class="lg"><div class="dot" style="background:#a855f7"></div>Scripts (Training Pipeline)</div>
+    <div class="lg"><div class="dot" style="background:#6366f1"></div>Scripts (Traffic Generation)</div>
+    <div class="lg"><div class="dot" style="background:#ec4899"></div>React Frontend</div>
+    <div class="lg"><div class="dot" style="background:#f97316"></div>Docker / CI / Infra</div>
+    <div class="lg"><div class="dot" style="background:#eab308"></div>Data Assets</div>
+    <div class="lg"><div class="dot" style="background:#14b8a6"></div>Tests</div>
+    <div class="lg"><div class="dot" style="background:#84cc16"></div>Notebooks</div>
+    <div class="lg"><div class="dot" style="background:#64748b"></div>Root Config Files</div>
+</div>
+
+<div id="info">
+    <h3 id="info-name"></h3>
+    <div class="path" id="info-path"></div>
+    <div id="info-tags"></div>
+    <div class="conns" id="info-conns"></div>
+</div>
+
+<div id="mynetwork"></div>
+
+<script>
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  NODES — Every real file from the AtnLyze WAF repository   ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+var nodes = new vis.DataSet([
+
+    // ── API GATEWAY ──────────────────────────────────────────
+    { id:'api_app',    label:'app.py',   title:'src/atnlyze/api/app.py\nFastAPI gateway — SSE, /analyze, /live_waf_feed', group:'gateway', value:35 },
+
+    // ── CORE ENGINE (src/atnlyze/) ───────────────────────────
+    { id:'core_init',  label:'__init__.py',               title:'src/atnlyze/__init__.py\nPackage init',                          group:'core', value:8 },
+    { id:'core_ds',    label:'dataset.py',                title:'src/atnlyze/dataset.py\nHuggingFace Dataset wrapper',            group:'core', value:16 },
+    { id:'core_inf',   label:'inference.py',              title:'src/atnlyze/inference.py\nBaseline TF-IDF + LR inference',       group:'core', value:20 },
+    { id:'core_inft',  label:'inference_transformer.py',  title:'src/atnlyze/inference_transformer.py\nPyTorch DistilBERT fallback', group:'core', value:18 },
+    { id:'core_info',  label:'inference_transformer\n_onnx.py', title:'src/atnlyze/inference_transformer_onnx.py\nINT8 ONNX production engine', group:'core', value:25 },
+    { id:'core_par',   label:'parser.py',                 title:'src/atnlyze/parser.py\nNginx access-log line parser',           group:'core', value:18 },
+    { id:'core_tok',   label:'tokenizer.py',              title:'src/atnlyze/tokenizer.py\nDistilBERT tokenizer wrapper',        group:'core', value:16 },
+    { id:'core_util',  label:'utils.py',                  title:'src/atnlyze/utils.py\nDecode helpers & utility functions',      group:'core', value:14 },
+
+    // ── MODEL DEFINITIONS (src/atnlyze/model/) ──────────────
+    { id:'mod_base',   label:'baseline.py',    title:'src/atnlyze/model/baseline.py\nTF-IDF + Logistic Regression model class', group:'modelcode', value:16 },
+    { id:'mod_train',  label:'trainer.py',     title:'src/atnlyze/model/trainer.py\nHF Trainer config & loop',                  group:'modelcode', value:18 },
+    { id:'mod_trans',  label:'transformer.py', title:'src/atnlyze/model/transformer.py\nDistilBERT fine-tune architecture',     group:'modelcode', value:20 },
+
+    // ── SAVED WEIGHTS (models/) ─────────────────────────────
+    { id:'w_bert',     label:'bert_waf/\nmodel.safetensors\n+ config + tokenizer', title:'models/bert_waf/\nFull fine-tuned DistilBERT (66M params)\nIncludes 2 checkpoints', group:'weights', value:28, shape:'box' },
+    { id:'w_onnx',     label:'bert_waf_onnx/\nmodel_int8.onnx\n(64 MB, quantized)', title:'models/bert_waf_onnx/\nmodel.onnx (FP32) → model_int8.onnx (INT8)\n+ tokenizer/', group:'weights', value:30, shape:'box' },
+    { id:'w_bl_job',   label:'baseline.joblib',   title:'models/baseline.joblib\nSerialized baseline LR model',   group:'weights', value:12, shape:'box' },
+    { id:'w_vec_job',  label:'vectorizer.joblib',  title:'models/vectorizer.joblib\nSerialized TF-IDF vectorizer',  group:'weights', value:12, shape:'box' },
+
+    // ── SCRIPTS — DATA PIPELINE ─────────────────────────────
+    { id:'s_convert_c', label:'convert_csic.py',            title:'scripts/convert_csic.py\nParse CSIC 2010 → labeled CSV',                   group:'scripts', value:14 },
+    { id:'s_convert_m', label:'convert_modsec.py',          title:'scripts/convert_modsec.py\nParse ModSec audit logs → labeled CSV',          group:'scripts', value:14 },
+    { id:'s_build',     label:'build_dataset.py',           title:'scripts/build_dataset.py\nMerge + stratified split → train/val/test',      group:'scripts', value:18 },
+    { id:'s_build_t',   label:'build_transformer\n_dataset.py', title:'scripts/build_transformer_dataset.py\nAdd structured_text column for BERT', group:'scripts', value:16 },
+    { id:'s_aug',       label:'augment_attacks.py',         title:'scripts/augment_attacks.py\nAdversarial obfuscation augmentation',          group:'scripts', value:18 },
+    { id:'s_build_h',   label:'build_hard_test\n_set.py',   title:'scripts/build_hard_test_set.py\nBuild evasion-heavy test split',            group:'scripts', value:14 },
+
+    // ── SCRIPTS — TRAINING ──────────────────────────────────
+    { id:'s_train_b',   label:'train_baseline.py',   title:'scripts/train_baseline.py\nTrain TF-IDF + LR pipeline',           group:'scripts', value:16 },
+    { id:'s_train_t',   label:'train_transformer.py', title:'scripts/train_transformer.py\nFine-tune DistilBERT with HF Trainer', group:'scripts', value:20 },
+
+    // ── SCRIPTS — EXPORT & EVAL ─────────────────────────────
+    { id:'s_export',    label:'export_onnx.py',          title:'scripts/export_onnx.py\nConvert PyTorch → ONNX FP32',           group:'scripts', value:16 },
+    { id:'s_quant',     label:'quantize_onnx.py',        title:'scripts/quantize_onnx.py\nDynamic INT8 quantization',           group:'scripts', value:16 },
+    { id:'s_eval_b',    label:'evaluate_baseline.py',    title:'scripts/evaluate_baseline.py\nF1, confusion matrix for baseline', group:'scripts', value:14 },
+    { id:'s_eval_t',    label:'evaluate_transformer.py', title:'scripts/evaluate_transformer.py\nF1, per-class metrics for BERT', group:'scripts', value:14 },
+    { id:'s_bench',     label:'benchmark_onnx.py',       title:'scripts/benchmark_onnx.py\nLatency & throughput benchmarks',    group:'scripts', value:14 },
+
+    // ── SCRIPTS — TRAFFIC GENERATION ────────────────────────
+    { id:'t_attack',  label:'attack_runner.py',  title:'scripts/traffic/attack_runner.py\nAutomated attack payload sender',   group:'traffic', value:16 },
+    { id:'t_benign',  label:'benign_crawler.py', title:'scripts/traffic/benign_crawler.py\nLegitimate traffic simulator',     group:'traffic', value:14 },
+    { id:'t_label',   label:'label_logs.py',     title:'scripts/traffic/label_logs.py\nLabel raw Docker Nginx logs',         group:'traffic', value:14 },
+    { id:'t_live',    label:'live_waf_feed.py',  title:'scripts/traffic/live_waf_feed.py\nTail Nginx log → POST to FastAPI', group:'traffic', value:18 },
+
+    // ── DATA ASSETS ─────────────────────────────────────────
+    { id:'d_csic_ext',  label:'csic_database.csv',         title:'data/external/csic_database.csv\nOriginal CSIC 2010 corpus',             group:'data', value:14, shape:'box' },
+    { id:'d_modsec_ext',label:'modsec/ (30 days)',         title:'data/external/modsec/\n30 daily audit-log folders (Jul–Aug 2025)',       group:'data', value:18, shape:'box' },
+    { id:'d_csic_raw',  label:'csic_labeled.csv',          title:'data/raw/csic/csic_labeled.csv\nConverted, labeled CSIC data',           group:'data', value:12, shape:'box' },
+    { id:'d_modsec_raw',label:'modsec_labeled.csv',        title:'data/raw/modsec/modsec_labeled.csv\nConverted, labeled ModSec data',     group:'data', value:12, shape:'box' },
+    { id:'d_processed', label:'data/processed/\n8 CSV splits + metadata', title:'data/processed/\nv2_train.csv, v2_val.csv, v2_test.csv\nv2_*_bert.csv, v2_*_augmented.csv\nv2_test_hard_bert.csv, v2_metadata.json', group:'data', value:24, shape:'box' },
+
+    // ── FRONTEND ────────────────────────────────────────────
+    { id:'fe_index',  label:'index.html',              title:'frontend/index.html\nVite entry point HTML',          group:'frontend', value:10 },
+    { id:'fe_main',   label:'main.jsx',                title:'frontend/src/main.jsx\nReact DOM render + theme',     group:'frontend', value:16 },
+    { id:'fe_app',    label:'App.jsx',                 title:'frontend/src/App.jsx\nMain app shell + layout',       group:'frontend', value:22 },
+    { id:'fe_api',    label:'api.js',                  title:'frontend/src/api.js\nAxios/fetch wrapper for backend', group:'frontend', value:14 },
+    { id:'fe_theme',  label:'theme.js',                title:'frontend/src/theme.js\nMUI/Chakra theme overrides',   group:'frontend', value:10 },
+    { id:'fe_vite',   label:'vite.config.js',          title:'frontend/vite.config.js\nVite build configuration',   group:'frontend', value:8 },
+
+    // Frontend Components
+    { id:'fc_arena',  label:'ArenaPanel.jsx',    title:'frontend/src/components/ArenaPanel.jsx\nLive attack visualization panel',  group:'frontend', value:16 },
+    { id:'fc_stats',  label:'StatsPanel.jsx',    title:'frontend/src/components/StatsPanel.jsx\nReal-time stats dashboard',       group:'frontend', value:14 },
+    { id:'fc_ctrl',   label:'ControlBar.jsx',    title:'frontend/src/components/ControlBar.jsx\nStart/Stop/Engine controls',      group:'frontend', value:14 },
+    { id:'fc_alert',  label:'AlertBanner.jsx',   title:'frontend/src/components/AlertBanner.jsx\nHigh-severity alert toasts',     group:'frontend', value:12 },
+    { id:'fc_dot',    label:'ConnectionDot.jsx', title:'frontend/src/components/ConnectionDot.jsx\nLive connection indicator',   group:'frontend', value:10 },
+
+    // Frontend Hooks
+    { id:'fh_sse',    label:'useSSE.js',   title:'frontend/src/hooks/useSSE.js\nServer-Sent Events subscription',     group:'frontend', value:14 },
+    { id:'fh_stats',  label:'useStats.js', title:'frontend/src/hooks/useStats.js\nAggregated stats computation hook', group:'frontend', value:12 },
+
+    // ── DOCKER / CI / INFRA ─────────────────────────────────
+    { id:'dk_compose', label:'docker-compose.yml', title:'docker/docker-compose.yml\nMulti-container orchestration',  group:'infra', value:20, shape:'hexagon' },
+    { id:'dk_nginx',   label:'nginx.conf',         title:'docker/nginx/nginx.conf\nReverse-proxy + access logging', group:'infra', value:16 },
+    { id:'dk_dfile',   label:'Dockerfile/',        title:'docker/Dockerfile/\nContainer build definitions',         group:'infra', value:12, shape:'hexagon' },
+    { id:'ci_yml',     label:'ci.yml',             title:'.github/workflows/ci.yml\nGitHub Actions CI pipeline',    group:'infra', value:14, shape:'hexagon' },
+
+    // ── TESTS ───────────────────────────────────────────────
+    { id:'ti_api',    label:'test_api.py',            title:'tests/integration/test_api.py',         group:'tests', value:12 },
+    { id:'ti_pipe',   label:'test_pipeline.py',       title:'tests/integration/test_pipeline.py',    group:'tests', value:12 },
+    { id:'tu_ds',     label:'test_dataset.py',        title:'tests/unit/test_dataset.py',            group:'tests', value:10 },
+    { id:'tu_dss',    label:'test_dataset_schema.py', title:'tests/unit/test_dataset_schema.py',     group:'tests', value:10 },
+    { id:'tu_par',    label:'test_parser.py',         title:'tests/unit/test_parser.py',             group:'tests', value:10 },
+    { id:'tu_tok',    label:'test_tokenizer.py',      title:'tests/unit/test_tokenizer.py',          group:'tests', value:10 },
+    { id:'tu_trn',    label:'test_trainer.py',        title:'tests/unit/test_trainer.py',            group:'tests', value:10 },
+
+    // ── NOTEBOOKS ───────────────────────────────────────────
+    { id:'nb_train',  label:'train_colab.ipynb',    title:'notebooks/train_colab.ipynb\nGoogle Colab training notebook',    group:'notebooks', value:14 },
+    { id:'nb_eval',   label:'evaluate_colab.ipynb', title:'notebooks/evaluate_colab.ipynb\nGoogle Colab evaluation notebook', group:'notebooks', value:14 },
+
+    // ── ROOT CONFIG FILES ───────────────────────────────────
+    { id:'r_readme',  label:'README.md',        title:'README.md\nProject documentation',          group:'config', value:16, shape:'box' },
+    { id:'r_demo',    label:'DEMO.md',          title:'DEMO.md\nOperational demo guide',           group:'config', value:10, shape:'box' },
+    { id:'r_make',    label:'Makefile',          title:'Makefile\nmake train, make serve, etc.',    group:'config', value:12 },
+    { id:'r_setup',   label:'setup.py',          title:'setup.py\nPip-installable package config', group:'config', value:10 },
+    { id:'r_reqs',    label:'requirements.txt',  title:'requirements.txt\nPinned Python deps',     group:'config', value:10 },
+    { id:'r_reqsin',  label:'requirements.in',   title:'requirements.in\nUnpinned dependency spec', group:'config', value:8 },
+    { id:'r_env',     label:'environment.yml',   title:'environment.yml\nConda environment spec',  group:'config', value:8 },
+    { id:'r_envex',   label:'.env.example',      title:'.env.example\nTemplate for env vars',      group:'config', value:8 },
+    { id:'r_lic',     label:'LICENSE',           title:'LICENSE\nMIT License',                      group:'config', value:6 },
+    { id:'r_run',     label:'run_local.sh',      title:'run_local.sh\nLocal dev startup script',   group:'config', value:8 },
+]);
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  EDGES — Dependency & Data-Flow connections                 ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+var edges = new vis.DataSet([
+
+    // ── API app.py imports from core ──
+    { from:'api_app', to:'core_info',  arrows:'to', label:'ONNX engine' },
+    { from:'api_app', to:'core_inft',  arrows:'to', label:'Torch fallback' },
+    { from:'api_app', to:'core_inf',   arrows:'to', label:'Baseline engine' },
+    { from:'api_app', to:'core_par',   arrows:'to', label:'parse log line' },
+    { from:'api_app', to:'core_util',  arrows:'to' },
+
+    // ── Core internal wiring ──
+    { from:'core_info', to:'core_tok',  arrows:'to', label:'tokenize' },
+    { from:'core_inft', to:'core_tok',  arrows:'to' },
+    { from:'core_info', to:'w_onnx',    arrows:'to', label:'loads INT8', dashes:true },
+    { from:'core_inft', to:'w_bert',    arrows:'to', label:'loads safetensors', dashes:true },
+    { from:'core_inf',  to:'w_bl_job',  arrows:'to', label:'loads joblib', dashes:true },
+    { from:'core_inf',  to:'w_vec_job', arrows:'to', dashes:true },
+    { from:'core_inf',  to:'core_util', arrows:'to' },
+    { from:'core_par',  to:'core_util', arrows:'to' },
+    { from:'core_ds',   to:'core_tok',  arrows:'to' },
+
+    // ── Model definitions used by scripts ──
+    { from:'mod_trans', to:'core_ds',    arrows:'to' },
+    { from:'mod_base',  to:'core_util',  arrows:'to' },
+    { from:'mod_train', to:'mod_trans',  arrows:'to', label:'trains' },
+
+    // ── Data pipeline (convert → build → augment) ──
+    { from:'d_csic_ext',  to:'s_convert_c', arrows:'to' },
+    { from:'d_modsec_ext',to:'s_convert_m', arrows:'to' },
+    { from:'s_convert_c', to:'d_csic_raw',  arrows:'to', label:'outputs' },
+    { from:'s_convert_m', to:'d_modsec_raw', arrows:'to', label:'outputs' },
+    { from:'d_csic_raw',  to:'s_build',     arrows:'to' },
+    { from:'d_modsec_raw',to:'s_build',     arrows:'to' },
+    { from:'s_build',     to:'d_processed', arrows:'to', label:'creates splits' },
+    { from:'s_build',     to:'s_build_t',   arrows:'to', label:'next' },
+    { from:'s_build_t',   to:'s_aug',       arrows:'to', label:'next' },
+    { from:'s_aug',       to:'d_processed', arrows:'to', label:'augmented CSV' },
+    { from:'s_build_h',   to:'d_processed', arrows:'to', label:'hard test CSV' },
+
+    // ── Training scripts ──
+    { from:'d_processed', to:'s_train_t',  arrows:'to' },
+    { from:'d_processed', to:'s_train_b',  arrows:'to' },
+    { from:'s_train_t',   to:'w_bert',     arrows:'to', label:'saves weights' },
+    { from:'s_train_t',   to:'mod_train',  arrows:'to', label:'uses trainer' },
+    { from:'s_train_b',   to:'w_bl_job',   arrows:'to', label:'saves joblib' },
+    { from:'s_train_b',   to:'w_vec_job',  arrows:'to' },
+
+    // ── Export & quantization ──
+    { from:'w_bert',    to:'s_export',  arrows:'to', label:'reads PyTorch' },
+    { from:'s_export',  to:'s_quant',   arrows:'to', label:'FP32 → INT8' },
+    { from:'s_quant',   to:'w_onnx',    arrows:'to', label:'saves INT8' },
+
+    // ── Evaluation ──
+    { from:'s_eval_t',  to:'core_info', arrows:'to' },
+    { from:'s_eval_b',  to:'core_inf',  arrows:'to' },
+    { from:'s_bench',   to:'core_info', arrows:'to' },
+
+    // ── Traffic scripts → Docker targets ──
+    { from:'t_attack',  to:'dk_nginx',  arrows:'to', label:'sends attacks' },
+    { from:'t_benign',  to:'dk_nginx',  arrows:'to', label:'sends benign' },
+    { from:'dk_nginx',  to:'t_label',   arrows:'to', label:'raw logs' },
+    { from:'t_live',    to:'api_app',   arrows:'to', label:'POST /live_waf_feed' },
+
+    // ── Frontend structure ──
+    { from:'fe_index', to:'fe_main',   arrows:'to' },
+    { from:'fe_main',  to:'fe_app',    arrows:'to' },
+    { from:'fe_main',  to:'fe_theme',  arrows:'to' },
+    { from:'fe_app',   to:'fc_arena',  arrows:'to' },
+    { from:'fe_app',   to:'fc_stats',  arrows:'to' },
+    { from:'fe_app',   to:'fc_ctrl',   arrows:'to' },
+    { from:'fe_app',   to:'fc_alert',  arrows:'to' },
+    { from:'fe_app',   to:'fh_sse',    arrows:'to' },
+    { from:'fe_app',   to:'fh_stats',  arrows:'to' },
+    { from:'fc_arena', to:'fc_dot',    arrows:'to' },
+    { from:'fe_api',   to:'fe_app',    arrows:'to' },
+
+    // ── Frontend ↔ Backend ──
+    { from:'fh_sse',   to:'api_app',   arrows:'to', label:'SSE stream', color:{color:'#f472b6'} },
+    { from:'fe_api',   to:'api_app',   arrows:'to', label:'REST calls', color:{color:'#f472b6'} },
+
+    // ── Docker / Infra ──
+    { from:'dk_compose', to:'dk_nginx',  arrows:'to' },
+    { from:'dk_compose', to:'dk_dfile',  arrows:'to' },
+    { from:'dk_compose', to:'api_app',   arrows:'to', label:'runs the server', dashes:true },
+
+    // ── CI ──
+    { from:'ci_yml', to:'r_reqs',   arrows:'to', label:'pip install' },
+    { from:'ci_yml', to:'ti_api',   arrows:'to', label:'pytest', dashes:true },
+    { from:'ci_yml', to:'tu_par',   arrows:'to', dashes:true },
+
+    // ── Tests test which modules ──
+    { from:'tu_par',  to:'core_par',  arrows:'to', dashes:true },
+    { from:'tu_tok',  to:'core_tok',  arrows:'to', dashes:true },
+    { from:'tu_ds',   to:'core_ds',   arrows:'to', dashes:true },
+    { from:'tu_trn',  to:'mod_train', arrows:'to', dashes:true },
+    { from:'ti_api',  to:'api_app',   arrows:'to', dashes:true },
+
+    // ── Notebooks ──
+    { from:'nb_train', to:'s_train_t', arrows:'to', label:'Colab version', dashes:true },
+    { from:'nb_eval',  to:'s_eval_t',  arrows:'to', dashes:true },
+
+    // ── Root config ──
+    { from:'r_make',  to:'r_run',    arrows:'to', dashes:true },
+    { from:'r_setup', to:'r_reqs',   arrows:'to', dashes:true },
+    { from:'r_reqsin',to:'r_reqs',   arrows:'to', label:'pip-compile', dashes:true },
+]);
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  RENDER                                                     ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+document.getElementById('nc').textContent = nodes.length;
+document.getElementById('ec').textContent = edges.length;
+
+var container = document.getElementById('mynetwork');
+
+var options = {
+    nodes: {
+        borderWidth: 2,
+        borderWidthSelected: 3,
+        font: { color:'#e2e8f0', size:12, face:'Inter', strokeWidth:3, strokeColor:'#0a0e1a' },
+        shadow: { enabled:true, color:'rgba(0,0,0,.4)', size:8, x:2, y:2 },
+        scaling: { min:18, max:50, label:{ min:10, max:16 } }
+    },
+    edges: {
+        width: 1.5,
+        selectionWidth: 2.5,
+        color: { color:'#334155', highlight:'#94a3b8', hover:'#64748b' },
+        font: { color:'#94a3b8', size:9, face:'JetBrains Mono', strokeWidth:0, align:'top' },
+        smooth: { type:'continuous', roundness:0.15 },
+        arrows: { to:{ scaleFactor:0.6 } }
+    },
+    groups: {
+        gateway:   { color:{ background:'#facc15', border:'#ca8a04', highlight:{ background:'#fef08a', border:'#eab308' } }, font:{ color:'#ffffff' } },
+        core:      { color:{ background:'#22c55e', border:'#15803d', highlight:{ background:'#86efac', border:'#16a34a' } }, font:{ color:'#ffffff' } },
+        modelcode: { color:{ background:'#06b6d4', border:'#0e7490', highlight:{ background:'#67e8f9', border:'#0891b2' } }, font:{ color:'#ffffff' } },
+        weights:   { color:{ background:'#3b82f6', border:'#1d4ed8', highlight:{ background:'#93c5fd', border:'#2563eb' } }, font:{ color:'#ffffff' } },
+        scripts:   { color:{ background:'#a855f7', border:'#7e22ce', highlight:{ background:'#d8b4fe', border:'#9333ea' } }, font:{ color:'#ffffff' } },
+        traffic:   { color:{ background:'#6366f1', border:'#4338ca', highlight:{ background:'#a5b4fc', border:'#4f46e5' } }, font:{ color:'#ffffff' } },
+        frontend:  { color:{ background:'#ec4899', border:'#be185d', highlight:{ background:'#fbcfe8', border:'#db2777' } }, font:{ color:'#ffffff' } },
+        infra:     { color:{ background:'#f97316', border:'#c2410c', highlight:{ background:'#fdba74', border:'#ea580c' } }, font:{ color:'#ffffff' } },
+        data:      { color:{ background:'#eab308', border:'#a16207', highlight:{ background:'#fde68a', border:'#ca8a04' } }, font:{ color:'#ffffff' } },
+        tests:     { color:{ background:'#14b8a6', border:'#0f766e', highlight:{ background:'#5eead4', border:'#0d9488' } }, font:{ color:'#ffffff' } },
+        notebooks: { color:{ background:'#84cc16', border:'#4d7c0f', highlight:{ background:'#bef264', border:'#65a30d' } }, font:{ color:'#ffffff' } },
+        config:    { color:{ background:'#64748b', border:'#475569', highlight:{ background:'#94a3b8', border:'#64748b' } }, font:{ color:'#ffffff' } }
+    },
+    physics: {
+        barnesHut: { gravitationalConstant:-5500, centralGravity:0.35, springLength:180, springConstant:0.04, damping:0.09, avoidOverlap:0.15 },
+        stabilization: { iterations:300 }
+    },
+    interaction: {
+        hover: true,
+        tooltipDelay: 80,
+        zoomView: true,
+        dragView: true,
+        multiselect: true
+    }
+};
+
+var network = new vis.Network(container, { nodes:nodes, edges:edges }, options);
+
+// ── Click → Info Panel ──
+network.on('click', function(params) {
+    var panel = document.getElementById('info');
+    if (params.nodes.length === 0) { panel.style.display = 'none'; return; }
+    var nodeId = params.nodes[0];
+    var node = nodes.get(nodeId);
+    var conns = network.getConnectedNodes(nodeId);
+
+    document.getElementById('info-name').textContent = node.label.replace(/\n/g, ' ');
+    document.getElementById('info-path').textContent = (node.title || '').split('\n')[0];
+
+    var groupColors = { gateway:'#facc15', core:'#22c55e', modelcode:'#06b6d4', weights:'#3b82f6', scripts:'#a855f7', traffic:'#6366f1', frontend:'#ec4899', infra:'#f97316', data:'#eab308', tests:'#14b8a6', notebooks:'#84cc16', config:'#64748b' };
+    var groupNames  = { gateway:'API Gateway', core:'Core Engine', modelcode:'Model Def', weights:'Weights', scripts:'Script', traffic:'Traffic Gen', frontend:'Frontend', infra:'Infra', data:'Data', tests:'Test', notebooks:'Notebook', config:'Config' };
+    var c = groupColors[node.group] || '#64748b';
+    document.getElementById('info-tags').innerHTML = '<span class="tag" style="background:'+c+';color:#0f172a">'+( groupNames[node.group] || node.group )+'</span>';
+
+    var desc = (node.title || '').split('\n').slice(1).join('<br>');
+    document.getElementById('info-conns').innerHTML = (desc ? desc+'<br><br>' : '') + '🔗 ' + conns.length + ' connection'+(conns.length!==1?'s':'');
+    panel.style.display = 'block';
+});
+
+network.on('deselectNode', function() {
+    document.getElementById('info').style.display = 'none';
+});
+</script>
+</body>
+</html>
